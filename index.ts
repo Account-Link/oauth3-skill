@@ -84,6 +84,7 @@ export class OAuth3 {
     while (Date.now() < deadline) {
       const data = await this.get(`/execute/${requestId}/status?wait=true`)
       if (['completed', 'failed', 'denied'].includes(data.status)) return data
+      await new Promise(r => setTimeout(r, 2000))
     }
     return { request_id: requestId, status: 'timeout', error: `No result after ${timeoutMs}ms` }
   }
