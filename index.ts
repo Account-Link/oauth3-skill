@@ -42,6 +42,8 @@ export interface ExecutionResult {
   policy_violations?: string[]
 }
 
+export const VERSION = '0.1.0'
+
 export class OAuth3 {
   constructor(public baseUrl: string, public apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
@@ -84,7 +86,7 @@ export class OAuth3 {
 
   private async get(path: string): Promise<any> {
     const res = await fetch(`${this.baseUrl}${path}`, {
-      headers: { 'Authorization': `Bearer ${this.apiKey}` },
+      headers: { 'Authorization': `Bearer ${this.apiKey}`, 'X-OAuth3-SDK-Version': VERSION },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => res.statusText)}`)
     return res.json()
@@ -93,7 +95,7 @@ export class OAuth3 {
   private async post(path: string, body: any): Promise<any> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'X-OAuth3-SDK-Version': VERSION },
       body: JSON.stringify(body),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => res.statusText)}`)
