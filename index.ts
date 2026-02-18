@@ -6,11 +6,14 @@
  *
  * Compatibility: orchestrator >= 0.1.x, enclave >= 0.1.x
  *
- * Usage:
- *   import { OAuth3 } from './index.ts'
- *   const client = new OAuth3('https://orchestrator.example.com', 'oauth3_abc_...')
- *   const result = await client.execute({ skill_id: 'hello', skill_code: 'console.log("hi")' })
+ * Quick start:
+ *   const { OAuth3 } = await import('https://raw.githubusercontent.com/Account-Link/oauth3-skill/main/index.ts')
+ *   const client = await OAuth3.create()  // signs up automatically
+ *   const result = await client.executeAndWait({ skill_id: 'hello', skill_code: 'console.log("hi")' })
  */
+
+export const VERSION = '0.1.0'
+export const DEFAULT_URL = 'https://orchestrator-oauth3-proxy.vercel.app'
 
 export interface ExecuteParams {
   skill_id: string
@@ -42,11 +45,16 @@ export interface ExecutionResult {
   policy_violations?: string[]
 }
 
-export const VERSION = '0.1.0'
-
 export class OAuth3 {
   constructor(public baseUrl: string, public apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
+  }
+
+  /** Create a client, signing up for a key if none provided */
+  static async create(apiKey?: string, baseUrl = DEFAULT_URL): Promise<OAuth3> {
+    if (apiKey) return new OAuth3(baseUrl, apiKey)
+    const { api_key } = await signup(baseUrl, 'agent')
+    return new OAuth3(baseUrl, api_key)
   }
 
   async execute(params: ExecuteParams): Promise<ExecutionResult> {
@@ -104,7 +112,7 @@ export class OAuth3 {
 }
 
 /** Sign up for a new API key */
-export async function signup(baseUrl: string, name?: string, email?: string): Promise<{ tenant_id: string; api_key: string }> {
+export async function signup(baseUrl = DEFAULT_URL, name?: string, email?: string): Promise<{ tenant_id: string; api_key: string }> {
   const res = await fetch(`${baseUrl.replace(/\/$/, '')}/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
