@@ -1,0 +1,12 @@
+{
+  "name": "oauth3-skill",
+  "version": "0.1.0",
+  "description": "Client SDK for OAuth3 execution proxy — submit code to run in a TEE sandbox",
+  "type": "module",
+  "main": "index.ts",
+  "files": ["index.ts", "README.md"],
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7"
+  }
+}
