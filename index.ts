@@ -51,14 +51,37 @@ export interface ExecutionResult {
   policy_violations?: string[]
 }
 
+const KEY_PATH = `${typeof Deno !== 'undefined' ? Deno.env.get('HOME') : process.env.HOME}/.oauth3/key`
+
+async function loadKey(): Promise<string | undefined> {
+  const env = typeof Deno !== 'undefined' ? Deno.env.get('OAUTH3_API_KEY') : process.env.OAUTH3_API_KEY
+  if (env) return env
+  try {
+    const fs = await import('node:fs')
+    return fs.readFileSync(KEY_PATH, 'utf-8').trim() || undefined
+  } catch { return undefined }
+}
+
+async function saveKey(key: string): Promise<void> {
+  try {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    fs.mkdirSync(path.dirname(KEY_PATH), { recursive: true })
+    fs.writeFileSync(KEY_PATH, key + '\n', { mode: 0o600 })
+  } catch {}
+}
+
 export class OAuth3 {
   constructor(public baseUrl: string, public apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
   }
 
+  /** Create client. Checks $OAUTH3_API_KEY, then ~/.oauth3/key, then auto-signs up and saves. */
   static async create(apiKey?: string, baseUrl = DEFAULT_URL): Promise<OAuth3> {
-    if (apiKey) return new OAuth3(baseUrl, apiKey)
+    const key = apiKey || await loadKey()
+    if (key) return new OAuth3(baseUrl, key)
     const { api_key } = await signup(baseUrl, 'agent')
+    await saveKey(api_key)
     return new OAuth3(baseUrl, api_key)
   }
 

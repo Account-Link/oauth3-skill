@@ -43,11 +43,12 @@ const result = await client.executeAndWait({
 // then blocks until result
 ```
 
-## With an existing API key
+## API key persistence
+
+`OAuth3.create()` automatically saves your API key to `~/.oauth3/key` on first signup and reloads it on subsequent calls. You can also set `$OAUTH3_API_KEY` env var, or pass a key directly:
 
 ```typescript
 const client = await OAuth3.create('oauth3_abc_...')
-// or: new OAuth3('https://orchestrator-oauth3-proxy.vercel.app', 'oauth3_abc_...')
 ```
 
 ## Code format
@@ -105,5 +106,5 @@ const result = await client.executeAndWait({
 
 ## Version
 
-v0.1.0 — compatible with orchestrator 0.1.x and enclave 0.1.x.
+v0.2.0 — compatible with orchestrator 0.1.x and enclave 0.1.x.
 See [VERSIONING.md](VERSIONING.md) for the compatibility convention.
