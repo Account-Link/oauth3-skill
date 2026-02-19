@@ -37,6 +37,7 @@ export interface ScopeParams {
   secrets: string[]
   networks: string[]
   session_id?: string
+  skill_code?: string
 }
 
 export interface ExecutionResult {
@@ -108,9 +109,12 @@ export class OAuth3 {
     return this.poll(data.request_id, timeoutMs)
   }
 
-  /** Request a scope (session), wait for approval, then execute with that session. */
+  /** Request a scope (session), wait for approval, then execute with that session.
+   *  Automatically includes skill_code in the scope request so human approves code+scope together. */
   async scopeAndExecute(scopeParams: ScopeParams, executeParams: ExecuteParams, timeoutMs = 300_000): Promise<ExecutionResult> {
-    const scope = await this.scope(scopeParams)
+    // Include code in scope request so human reviews code+scope as one package
+    const scopeWithCode = executeParams.skill_code ? { ...scopeParams, skill_code: executeParams.skill_code } : scopeParams
+    const scope = await this.scope(scopeWithCode)
     if (scope.approval_url) console.log(`\n👉 Approve scope: ${scope.approval_url}\n`)
     const approved = await this.poll(scope.request_id, timeoutMs)
     if (approved.status !== 'completed') return approved

@@ -65,7 +65,8 @@ if (hasFlag('bg') && cmd !== '__bg-worker') {
     const codeFile = flag('code')
     if (!scopeFile || !codeFile) { console.error('Usage: scope-and-execute --bg --scope FILE --code FILE'); process.exit(1) }
     const scope = JSON.parse(readFileSync(scopeFile, 'utf-8'))
-    const scopeRes = await client.scope(scope)
+    const code = readFileSync(codeFile, 'utf-8')
+    const scopeRes = await client.scope({ ...scope, skill_code: code })
 
     const info = {
       status: 'polling_scope', job_id: jobId, job_file: jobFile,
@@ -179,7 +180,7 @@ async function main() {
     const code = readFileSync(codeFile, 'utf-8')
     const skillId = flag('skill-id') || codeFile.replace(/\.ts$/, '').replace(/.*\//, '')
 
-    const scopeRes = await client.scope(scope)
+    const scopeRes = await client.scope({ ...scope, skill_code: code })
     if (scopeRes.approval_url) console.error(`👉 Approve scope: ${scopeRes.approval_url}`)
     console.error(`⏳ Polling scope ${scopeRes.request_id}...`)
     const approved = await client.poll(scopeRes.request_id, timeout)
