@@ -89,6 +89,36 @@ const result = await client.executeAndWait({
 })
 ```
 
+## CLI (for AI agents)
+
+The CLI is designed for agents that use shell exec tools. It blocks until completion, printing approval URLs to stderr and the final result to stdout.
+
+```bash
+# Scope + execute in one blocking call (recommended)
+npx tsx cli.ts scope-and-execute --scope scope.json --code skill.ts --timeout 300
+
+# Execute only (with existing session)
+npx tsx cli.ts execute --code skill.ts --session SESSION_ID
+
+# Poll a pending request
+npx tsx cli.ts poll REQUEST_ID
+
+# One-shot status check
+npx tsx cli.ts status REQUEST_ID
+```
+
+`scope.json`:
+```json
+{ "description": "GitHub access", "constraints": ["Read only"], "secrets": ["GITHUB_TOKEN"], "networks": ["api.github.com"] }
+```
+
+The command will:
+1. Print `👉 Approve scope: URL` to stderr — show this to the human
+2. Block polling until approved (up to --timeout seconds)
+3. Auto-chain to execute after scope approval
+4. Print `👉 Approve execution: URL` if code review requires it
+5. Print final JSON result to stdout when done
+
 ## API
 
 | Method | Description |
