@@ -1,5 +1,5 @@
 /**
- * oauth3-skill v0.1.0
+ * oauth3-skill v0.2.0
  *
  * Client SDK for OAuth3 execution proxy.
  * Submit TypeScript code to run in a Deno sandbox inside a TEE.
@@ -10,10 +10,16 @@
  *   const { OAuth3 } = await import('https://raw.githubusercontent.com/Account-Link/oauth3-skill/main/index.ts')
  *   const client = await OAuth3.create()  // signs up automatically
  *   const result = await client.executeAndWait({ skill_id: 'hello', skill_code: 'console.log("hi")' })
+ *
+ * Scope flow (pre-approve a session for auto-execution):
+ *   const result = await client.scopeAndExecute(
+ *     { description: 'Read GitHub issues', constraints: ['Only GET requests'], secrets: ['GITHUB_TOKEN'], networks: ['api.github.com'] },
+ *     { skill_id: 'list-issues', skill_code: '...' }
+ *   )
  */
 
-export const VERSION = '0.1.0'
-export const DEFAULT_URL = 'https://orchestrator-oauth3-proxy.vercel.app'
+export const VERSION = '0.2.0'
+export const DEFAULT_URL = 'https://oauth3-for-agents.vercel.app'
 
 export interface ExecuteParams {
   skill_id: string
@@ -50,7 +56,6 @@ export class OAuth3 {
     this.baseUrl = baseUrl.replace(/\/$/, '')
   }
 
-  /** Create a client, signing up for a key if none provided */
   static async create(apiKey?: string, baseUrl = DEFAULT_URL): Promise<OAuth3> {
     if (apiKey) return new OAuth3(baseUrl, apiKey)
     const { api_key } = await signup(baseUrl, 'agent')
@@ -72,11 +77,21 @@ export class OAuth3 {
     return this.post('/execute', { ...params, dry_run: true })
   }
 
+  /** Submit code and wait for result. Prints approval URL if human approval needed. */
   async executeAndWait(params: ExecuteParams, timeoutMs = 300_000): Promise<ExecutionResult> {
     const data = await this.post('/execute', params)
     if (['completed', 'failed', 'denied'].includes(data.status)) return data
     if (data.approval_url) console.log(`\n👉 Approve: ${data.approval_url}\n`)
     return this.poll(data.request_id, timeoutMs)
+  }
+
+  /** Request a scope (session), wait for approval, then execute with that session. */
+  async scopeAndExecute(scopeParams: ScopeParams, executeParams: ExecuteParams, timeoutMs = 300_000): Promise<ExecutionResult> {
+    const scope = await this.scope(scopeParams)
+    if (scope.approval_url) console.log(`\n👉 Approve scope: ${scope.approval_url}\n`)
+    const approved = await this.poll(scope.request_id, timeoutMs)
+    if (approved.status !== 'completed') return approved
+    return this.executeAndWait({ ...executeParams, session_id: scope.session_id }, timeoutMs)
   }
 
   async poll(requestId: string, timeoutMs = 300_000): Promise<ExecutionResult> {
@@ -112,7 +127,6 @@ export class OAuth3 {
   }
 }
 
-/** Sign up for a new API key */
 export async function signup(baseUrl = DEFAULT_URL, name?: string, email?: string): Promise<{ tenant_id: string; api_key: string }> {
   const res = await fetch(`${baseUrl.replace(/\/$/, '')}/signup`, {
     method: 'POST',
