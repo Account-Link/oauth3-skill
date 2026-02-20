@@ -12,7 +12,7 @@
 
 export const VERSION = '0.3.0'
 export const DEFAULT_ENCLAVE_URL = 'https://tee.oauth3-stage.monerolink.com'
-export const DEFAULT_ORCHESTRATOR_URL = 'https://oauth3.monerolink.com'
+export const DEFAULT_ORCHESTRATOR_URL = 'https://oauth3-stage.monerolink.com'
 
 export interface ExecuteParams {
   skill_id: string
