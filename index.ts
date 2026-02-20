@@ -1,25 +1,18 @@
 /**
- * oauth3-skill v0.2.0
+ * oauth3-skill v0.3.0
  *
  * Client SDK for OAuth3 execution proxy.
  * Submit TypeScript code to run in a Deno sandbox inside a TEE.
  *
- * Compatibility: orchestrator >= 0.1.x, enclave >= 0.1.x
- *
  * Quick start:
  *   const { OAuth3 } = await import('https://raw.githubusercontent.com/Account-Link/oauth3-skill/main/index.ts')
- *   const client = await OAuth3.create()  // signs up automatically
+ *   const client = await OAuth3.create()  // signs up automatically, talks directly to enclave
  *   const result = await client.executeAndWait({ skill_id: 'hello', skill_code: 'console.log("hi")' })
- *
- * Scope flow (pre-approve a session for auto-execution):
- *   const result = await client.scopeAndExecute(
- *     { description: 'Read GitHub issues', constraints: ['Only GET requests'], secrets: ['GITHUB_TOKEN'], networks: ['api.github.com'] },
- *     { skill_id: 'list-issues', skill_code: '...' }
- *   )
  */
 
-export const VERSION = '0.2.0'
-export const DEFAULT_URL = 'https://oauth3-for-agents.vercel.app'
+export const VERSION = '0.3.0'
+export const DEFAULT_ENCLAVE_URL = 'https://tee.oauth3-stage.monerolink.com'
+export const DEFAULT_ORCHESTRATOR_URL = 'https://oauth3-stage.monerolink.com'
 
 export interface ExecuteParams {
   skill_id: string
@@ -52,38 +45,72 @@ export interface ExecutionResult {
   policy_violations?: string[]
 }
 
-const KEY_PATH = `${typeof Deno !== 'undefined' ? Deno.env.get('HOME') : process.env.HOME}/.oauth3/key`
+const HOME = typeof Deno !== 'undefined' ? Deno.env.get('HOME') : process.env.HOME
+const TOKEN_PATH = `${HOME}/.oauth3/token`
+const CONFIG_PATH = `${HOME}/.oauth3/config.json`
 
-async function loadKey(): Promise<string | undefined> {
+interface StoredConfig {
+  jwt: string
+  tenant_id: string
+  enclave_url: string
+  orchestrator_url: string
+}
+
+async function loadConfig(): Promise<StoredConfig | undefined> {
+  try {
+    const fs = await import('node:fs')
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'))
+  } catch { return undefined }
+}
+
+async function saveConfig(config: StoredConfig): Promise<void> {
+  try {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true })
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+  } catch {}
+}
+
+// Legacy: read old ~/.oauth3/key if config doesn't exist
+async function loadLegacyKey(): Promise<string | undefined> {
   const env = typeof Deno !== 'undefined' ? Deno.env.get('OAUTH3_API_KEY') : process.env.OAUTH3_API_KEY
   if (env) return env
   try {
     const fs = await import('node:fs')
-    return fs.readFileSync(KEY_PATH, 'utf-8').trim() || undefined
+    return fs.readFileSync(`${HOME}/.oauth3/key`, 'utf-8').trim() || undefined
   } catch { return undefined }
 }
 
-async function saveKey(key: string): Promise<void> {
-  try {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    fs.mkdirSync(path.dirname(KEY_PATH), { recursive: true })
-    fs.writeFileSync(KEY_PATH, key + '\n', { mode: 0o600 })
-  } catch {}
-}
-
 export class OAuth3 {
-  constructor(public baseUrl: string, public apiKey: string) {
+  constructor(public baseUrl: string, public token: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
   }
 
-  /** Create client. Checks $OAUTH3_API_KEY, then ~/.oauth3/key, then auto-signs up and saves. */
-  static async create(apiKey?: string, baseUrl = DEFAULT_URL): Promise<OAuth3> {
-    const key = apiKey || await loadKey()
-    if (key) return new OAuth3(baseUrl, key)
-    const { api_key } = await signup(baseUrl, 'agent')
-    await saveKey(api_key)
-    return new OAuth3(baseUrl, api_key)
+  /** Create client. Checks stored config, env, then auto-signs up. */
+  static async create(opts?: { token?: string, enclaveUrl?: string, orchestratorUrl?: string }): Promise<OAuth3> {
+    const enclaveUrl = opts?.enclaveUrl || process.env.OAUTH3_ENCLAVE_URL || DEFAULT_ENCLAVE_URL
+    const orchestratorUrl = opts?.orchestratorUrl || process.env.OAUTH3_ORCHESTRATOR_URL || DEFAULT_ORCHESTRATOR_URL
+
+    // Explicit token
+    if (opts?.token) return new OAuth3(enclaveUrl, opts.token)
+
+    // Stored config
+    const config = await loadConfig()
+    if (config?.jwt) return new OAuth3(config.enclave_url || enclaveUrl, config.jwt)
+
+    // Legacy api_key (talks to enclave with bearer token)
+    const legacyKey = await loadLegacyKey()
+    if (legacyKey) return new OAuth3(enclaveUrl, legacyKey)
+
+    // Auto-signup via orchestrator
+    const { jwt, tenant_id, tee_url } = await signup(orchestratorUrl, 'agent')
+    const finalEnclaveUrl = tee_url || enclaveUrl
+    if (jwt) {
+      await saveConfig({ jwt, tenant_id, enclave_url: finalEnclaveUrl, orchestrator_url: orchestratorUrl })
+      return new OAuth3(finalEnclaveUrl, jwt)
+    }
+    throw new Error('Signup succeeded but no JWT returned — is JWT_SECRET configured on orchestrator?')
   }
 
   async execute(params: ExecuteParams): Promise<ExecutionResult> {
@@ -101,7 +128,6 @@ export class OAuth3 {
     return this.post('/execute', { ...params, dry_run: true })
   }
 
-  /** Submit code and wait for result. Prints approval URL if human approval needed. */
   async executeAndWait(params: ExecuteParams, timeoutMs = 300_000): Promise<ExecutionResult> {
     const data = await this.post('/execute', params)
     if (['completed', 'failed', 'denied'].includes(data.status)) return data
@@ -109,10 +135,7 @@ export class OAuth3 {
     return this.poll(data.request_id, timeoutMs)
   }
 
-  /** Request a scope (session), wait for approval, then execute with that session.
-   *  Automatically includes skill_code in the scope request so human approves code+scope together. */
   async scopeAndExecute(scopeParams: ScopeParams, executeParams: ExecuteParams, timeoutMs = 300_000): Promise<ExecutionResult> {
-    // Include code in scope request so human reviews code+scope as one package
     const scopeWithCode = executeParams.skill_code ? { ...scopeParams, skill_code: executeParams.skill_code } : scopeParams
     const scope = await this.scope(scopeWithCode)
     if (scope.approval_url) console.log(`\n👉 Approve scope: ${scope.approval_url}\n`)
@@ -138,7 +161,7 @@ export class OAuth3 {
 
   private async get(path: string): Promise<any> {
     const res = await fetch(`${this.baseUrl}${path}`, {
-      headers: { 'Authorization': `Bearer ${this.apiKey}`, 'X-OAuth3-SDK-Version': VERSION },
+      headers: { 'Authorization': `Bearer ${this.token}`, 'X-OAuth3-SDK-Version': VERSION },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => res.statusText)}`)
     return res.json()
@@ -147,7 +170,7 @@ export class OAuth3 {
   private async post(path: string, body: any): Promise<any> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'X-OAuth3-SDK-Version': VERSION },
+      headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json', 'X-OAuth3-SDK-Version': VERSION },
       body: JSON.stringify(body),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => res.statusText)}`)
@@ -155,8 +178,8 @@ export class OAuth3 {
   }
 }
 
-export async function signup(baseUrl = DEFAULT_URL, name?: string, email?: string): Promise<{ tenant_id: string; api_key: string }> {
-  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/signup`, {
+export async function signup(orchestratorUrl = DEFAULT_ORCHESTRATOR_URL, name?: string, email?: string): Promise<{ tenant_id: string; api_key: string; jwt: string; tee_url: string }> {
+  const res = await fetch(`${orchestratorUrl.replace(/\/$/, '')}/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, email }),

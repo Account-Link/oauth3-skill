@@ -58,7 +58,7 @@ if (hasFlag('bg') && cmd !== '__bg-worker') {
   worker.unref()
 
   // Quick: submit the scope/execute to get approval URLs before exiting
-  const client = await OAuth3.create(flag('key'))
+  const client = await OAuth3.create({ token: flag('key'), enclaveUrl: flag('enclave-url'), orchestratorUrl: flag('orchestrator-url') })
 
   if (cmd === 'scope-and-execute') {
     const scopeFile = flag('scope')
@@ -112,7 +112,7 @@ if (cmd === '__bg-worker') {
   const innerCmd = args.find(a => a === 'scope-and-execute' || a === 'execute')!
 
   try {
-    const client = await OAuth3.create(flag('key'))
+    const client = await OAuth3.create({ token: flag('key'), enclaveUrl: flag('enclave-url'), orchestratorUrl: flag('orchestrator-url') })
     const job = JSON.parse(readFileSync(jobFile, 'utf-8'))
 
     if (innerCmd === 'scope-and-execute') {
@@ -163,7 +163,7 @@ if (cmd === '__bg-worker') {
 
 // --- Foreground commands ---
 async function main() {
-  const client = await OAuth3.create(flag('key'))
+  const client = await OAuth3.create({ token: flag('key'), enclaveUrl: flag('enclave-url'), orchestratorUrl: flag('orchestrator-url') })
 
   if (cmd === 'result') {
     const jobFile = args[1]

@@ -1,0 +1,6 @@
+{
+  "description": "GitHub API gateway — read and write access",
+  "constraints": ["Only access api.github.com"],
+  "secrets": ["GITHUB_TOKEN"],
+  "networks": ["api.github.com"]
+}
