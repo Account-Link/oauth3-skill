@@ -19,7 +19,7 @@
  */
 
 export const VERSION = '0.2.0'
-export const DEFAULT_URL = 'https://oauth3-for-agents.vercel.app'
+export const DEFAULT_URL = 'https://d4df378d99ba479c2b4b4200c16d11bcc27cec62-3737.dstack-pha-prod7.phala.network'
 
 export interface ExecuteParams {
   skill_id: string
